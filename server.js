@@ -278,7 +278,15 @@ app.get('/api/products', async (req, res) => {
       allProducts = allProducts.concat(products);
 
       // Check for pagination via Link header
-      const link = response.headers?.link || response.headers?.Link || '';
+      let link = '';
+      if (response.headers) {
+        if (typeof response.headers.get === 'function') {
+          link = response.headers.get('link') || '';
+        } else {
+          const raw = response.headers.link || response.headers.Link;
+          link = typeof raw === 'string' ? raw : '';
+        }
+      }
       const nextMatch = link.match(/<[^>]*page_info=([^>&]*)[^>]*>;\s*rel="next"/);
       if (nextMatch) {
         params = { limit: 250, page_info: nextMatch[1], fields: params.fields };
