@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Label Maker — Pandora's Deck Box</title>
+  <style>
+    /* ─── CSS Variables / Theme ─── */
+    :root {
+      --bg-primary: #0f0f1a;
+      --bg-secondary: #1a1a2e;
+      --bg-tertiary: #16213e;
+      --bg-card: #1e1e36;
+      --bg-input: #252545;
+      --border: #2d2d50;
+      --border-focus: #6c63ff;
+      --text-primary: #e8e8f0;
+      --text-secondary: #a0a0c0;
+      --text-muted: #6c6c8a;
+      --accent: #6c63ff;
+      --accent-hover: #7c73ff;
+      --accent-bg: rgba(108, 99, 255, 0.12);
+      --success: #4ade80;
+      --success-bg: rgba(74, 222, 128, 0.12);
+      --warning: #fbbf24;
+      --warning-bg: rgba(251, 191, 36, 0.12);
+      --danger: #f87171;
+      --danger-bg: rgba(248, 113, 113, 0.12);
+      --info: #38bdf8;
+      --radius: 8px;
+      --radius-lg: 12px;
+      --shadow: 0 2px 8px rgba(0,0,0,0.3);
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    }
+
+    /* ─── Reset ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: var(--font); background: var(--bg-primary); color: var(--text-primary); }
+    body { display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ─── Layout ─── */
+    .app-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px; background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .app-header h1 { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .app-header h1 span { font-size: 22px; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    .app-body { display: flex; flex: 1; overflow: hidden; }
+
+    /* ─── Tabs (Sidebar) ─── */
+    .tab-nav {
+      display: flex; flex-direction: column; width: 180px;
+      background: var(--bg-secondary); border-right: 1px solid var(--border);
+      padding: 8px 0; flex-shrink: 0;
+    }
+    .tab-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 16px; border: none; background: none;
+      color: var(--text-secondary); font-size: 13px;
+      cursor: pointer; text-align: left; transition: all 0.15s;
+    }
+    .tab-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .tab-btn.active {
+      background: var(--accent-bg); color: var(--accent);
+      border-right: 3px solid var(--accent);
+    }
+    .tab-btn .icon { font-size: 16px; width: 20px; text-align: center; }
+
+    /* ─── Tab Content ─── */
+    .tab-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .tab-panel { display: none; flex: 1; overflow: auto; padding: 20px; }
+    .tab-panel.active { display: flex; flex-direction: column; }
+
+    /* ─── Print Queue Panel (right sidebar) ─── */
+    .print-queue-panel {
+      width: 340px; background: var(--bg-secondary);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .queue-header {
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .queue-header h2 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .queue-count {
+      background: var(--accent); color: white; border-radius: 12px;
+      padding: 1px 8px; font-size: 12px; font-weight: 600;
+    }
+    .queue-controls {
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .queue-row { display: flex; align-items: center; gap: 8px; }
+    .queue-row label { font-size: 12px; color: var(--text-secondary); min-width: 50px; }
+    .queue-list { flex: 1; overflow-y: auto; padding: 8px; }
+    .queue-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: var(--radius);
+      background: var(--bg-card); margin-bottom: 4px;
+      font-size: 12px; position: relative;
+    }
+    .queue-item:hover { background: var(--bg-tertiary); }
+    .queue-item-img {
+      width: 36px; height: 36px; border-radius: 4px;
+      object-fit: cover; background: var(--bg-input); flex-shrink: 0;
+    }
+    .queue-item-info { flex: 1; min-width: 0; }
+    .queue-item-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+    .queue-item-meta { color: var(--text-muted); font-size: 11px; display: flex; gap: 6px; align-items: center; }
+    .queue-item-price { color: var(--success); font-weight: 600; }
+    .queue-item-qty {
+      display: flex; align-items: center; gap: 2px;
+    }
+    .queue-item-qty button {
+      width: 20px; height: 20px; border: 1px solid var(--border);
+      border-radius: 4px; background: var(--bg-input); color: var(--text-primary);
+      cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;
+    }
+    .queue-item-qty button:hover { border-color: var(--accent); }
+    .queue-item-qty span { width: 24px; text-align: center; font-size: 12px; font-weight: 600; }
+    .queue-item-remove {
+      position: absolute; top: 4px; right: 6px;
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 14px; padding: 0;
+      opacity: 0; transition: opacity 0.15s;
+    }
+    .queue-item:hover .queue-item-remove { opacity: 1; }
+    .queue-item-remove:hover { color: var(--danger); }
+
+    .queue-footer {
+      padding: 12px 16px; border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .queue-summary { font-size: 12px; color: var(--text-secondary); display: flex; justify-content: space-between; }
+    .queue-empty {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 8px; color: var(--text-muted); font-size: 13px;
+    }
+    .queue-empty .icon { font-size: 32px; opacity: 0.5; }
+
+    /* ─── Buttons ─── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 8px 16px; border: none; border-radius: var(--radius);
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: all 0.15s; font-family: var(--font);
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--accent); }
+    .btn-danger { background: var(--danger-bg); color: var(--danger); }
+    .btn-danger:hover { background: rgba(248, 113, 113, 0.2); }
+    .btn-success { background: var(--success); color: #000; }
+    .btn-success:hover { background: #5ce88e; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-icon { padding: 6px 8px; }
+
+    /* ─── Inputs ─── */
+    input[type="text"], input[type="number"], input[type="search"], select {
+      padding: 8px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg-input);
+      color: var(--text-primary); font-size: 13px;
+      font-family: var(--font); outline: none; transition: border-color 0.15s;
+    }
+    input:focus, select:focus { border-color: var(--border-focus); }
+    input::placeholder { color: var(--text-muted); }
+
+    /* ─── Search Bar ─── */
+    .search-bar {
+      display: flex; gap: 8px; align-items: center;
+      padding: 12px 0; flex-shrink: 0;
+    }
+    .search-input-wrap {
+      flex: 1; position: relative;
+    }
+    .search-input-wrap input {
+      width: 100%; padding-left: 36px;
+    }
+    .search-input-wrap::before {
+      content: '🔍'; position: absolute; left: 10px; top: 50%;
+      transform: translateY(-50%); font-size: 14px; pointer-events: none;
+    }
+    .filter-group { display: flex; gap: 6px; align-items: center; }
+    .filter-group label { font-size: 12px; color: var(--text-secondary); }
+
+    /* ─── Product Grid ─── */
+    .product-grid {
+      flex: 1; overflow-y: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 10px; padding-bottom: 16px;
+    }
+    .product-card {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; background: var(--bg-card);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      cursor: pointer; transition: all 0.15s; position: relative;
+    }
+    .product-card:hover { border-color: var(--accent); background: var(--bg-tertiary); }
+    .product-card.in-queue { border-color: var(--accent); background: var(--accent-bg); }
+    .product-card-img {
+      width: 44px; height: 44px; border-radius: 4px;
+      object-fit: cover; background: var(--bg-input); flex-shrink: 0;
+    }
+    .product-card-info { flex: 1; min-width: 0; }
+    .product-card-title {
+      font-weight: 500; font-size: 13px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .product-card-meta {
+      display: flex; gap: 8px; align-items: center;
+      font-size: 11px; color: var(--text-muted); margin-top: 2px;
+    }
+    .product-card-price { color: var(--success); font-weight: 600; font-size: 13px; }
+    .product-card-barcode { color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; }
+    .product-card-vendor { color: var(--info); }
+    .product-card-type { color: var(--text-secondary); }
+    .product-card-add {
+      background: var(--accent); color: white; border: none;
+      border-radius: 50%; width: 28px; height: 28px;
+      cursor: pointer; font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: all 0.15s;
+    }
+    .product-card-add:hover { background: var(--accent-hover); transform: scale(1.1); }
+    .product-card.in-queue .product-card-add { background: var(--success); }
+    .product-card-check {
+      position: absolute; top: 6px; right: 6px;
+      color: var(--accent); font-size: 14px; display: none;
+    }
+    .product-card.in-queue .product-card-check { display: block; }
+
+    /* ─── Sort Buttons ─── */
+    .sort-group { display: flex; gap: 2px; }
+    .sort-btn {
+      padding: 5px 10px; border: 1px solid var(--border); background: var(--bg-input);
+      color: var(--text-secondary); font-size: 11px; cursor: pointer; transition: all 0.15s;
+    }
+    .sort-btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+    .sort-btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+    .sort-btn:hover { color: var(--text-primary); }
+    .sort-btn.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+
+    /* ─── Settings Panel ─── */
+    .settings-section {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 20px; margin-bottom: 16px;
+    }
+    .settings-section h3 { font-size: 15px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+    .setting-field { display: flex; flex-direction: column; gap: 4px; }
+    .setting-field label { font-size: 12px; color: var(--text-secondary); }
+    .setting-field input, .setting-field select { padding: 6px 10px; }
+    .setting-field .help { font-size: 11px; color: var(--text-muted); }
+
+    /* ─── Profile Cards ─── */
+    .profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .profile-card {
+      background: var(--bg-card); border: 2px solid var(--border);
+      border-radius: var(--radius-lg); padding: 16px; cursor: pointer; transition: all 0.15s;
+    }
+    .profile-card:hover { border-color: var(--accent); }
+    .profile-card.active { border-color: var(--accent); background: var(--accent-bg); }
+    .profile-card h4 { font-size: 14px; margin-bottom: 4px; }
+    .profile-card p { font-size: 12px; color: var(--text-muted); }
+    .profile-card .dims { font-size: 11px; color: var(--text-secondary); margin-top: 6px; font-family: var(--font-mono); }
+
+    /* ─── History Table ─── */
+    .history-table { width: 100%; border-collapse: collapse; }
+    .history-table th {
+      text-align: left; padding: 8px 12px; font-size: 12px;
+      color: var(--text-muted); border-bottom: 1px solid var(--border);
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .history-table td {
+      padding: 10px 12px; font-size: 13px;
+      border-bottom: 1px solid var(--border);
+    }
+    .history-table tr:hover td { background: var(--bg-tertiary); }
+
+    /* ─── Badges ─── */
+    .badge {
+      display: inline-flex; align-items: center; padding: 2px 8px;
+      border-radius: 10px; font-size: 11px; font-weight: 500;
+    }
+    .badge-barcode { background: var(--accent-bg); color: var(--accent); }
+    .badge-sku { background: var(--success-bg); color: var(--success); }
+
+    /* ─── Toast ─── */
+    .toast-container {
+      position: fixed; bottom: 20px; right: 20px;
+      z-index: 9999; display: flex; flex-direction: column; gap: 8px;
+    }
+    .toast {
+      padding: 12px 20px; border-radius: var(--radius);
+      font-size: 13px; animation: slideIn 0.3s ease;
+      box-shadow: var(--shadow); max-width: 360px;
+    }
+    .toast-success { background: #065f46; color: #d1fae5; }
+    .toast-error { background: #7f1d1d; color: #fee2e2; }
+    .toast-info { background: #1e3a5f; color: #dbeafe; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* ─── Loading Overlay ─── */
+    .loading-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: none; align-items: center; justify-content: center;
+      z-index: 10000;
+    }
+    .loading-overlay.active { display: flex; }
+    .loading-spinner {
+      width: 40px; height: 40px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Status Bar ─── */
+    .status-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 16px; background: var(--bg-tertiary);
+      border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    /* ─── Scrollbar ─── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 900px) {
+      .tab-nav { width: 50px; }
+      .tab-btn span.label { display: none; }
+      .print-queue-panel { width: 280px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── App Header ─── -->
+  <div class="app-header">
+    <h1><span>🏷️</span> Label Maker</h1>
+    <div class="header-actions">
+      <span id="shopName" style="font-size: 12px; color: var(--text-muted);"></span>
+    </div>
+  </div>
+
+  <!-- ─── App Body ─── -->
+  <div class="app-body">
+
+    <!-- ─── Tab Navigation ─── -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="products" title="Products">
+        <span class="icon">📦</span><span class="label">Products</span>
+      </button>
+      <button class="tab-btn" data-tab="settings" title="Settings">
+        <span class="icon">⚙️</span><span class="label">Settings</span>
+      </button>
+      <button class="tab-btn" data-tab="history" title="History">
+        <span class="icon">📋</span><span class="label">History</span>
+      </button>
+    </nav>
+
+    <!-- ─── Tab Content ─── -->
+    <div class="tab-content">
+
+      <!-- ═══ Products Tab ═══ -->
+      <div class="tab-panel active" id="tab-products">
+        <!-- Search / Filter Bar -->
+        <div class="search-bar">
+          <div class="search-input-wrap">
+            <input type="search" id="searchInput" placeholder="Search products by name, barcode, vendor, type..." autocomplete="off">
+          </div>
+          <div class="filter-group">
+            <label>Type:</label>
+            <select id="filterType">
+              <option value="">All Types</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Vendor:</label>
+            <select id="filterVendor">
+              <option value="">All Vendors</option>
+            </select>
+          </div>
+          <div class="sort-group">
+            <button class="sort-btn active" data-sort="name" title="Sort by Name">A-Z</button>
+            <button class="sort-btn" data-sort="price" title="Sort by Price">$</button>
+            <button class="sort-btn" data-sort="type" title="Sort by Type">Type</button>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="refreshProducts" title="Refresh products">↻</button>
+        </div>
+
+        <!-- Product Grid -->
+        <div class="product-grid" id="productGrid">
+          <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-muted);">
+            <div style="font-size: 40px; margin-bottom: 10px;">📦</div>
+            Loading products...
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Settings Tab ═══ -->
+      <div class="tab-panel" id="tab-settings">
+        <!-- Active Profile -->
+        <div class="settings-section">
+          <h3>📄 Label Profile</h3>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            Select a label sheet profile. Avery 6460 is fine-tuned for your printer.
+          </p>
+          <div class="profile-grid" id="profileGrid"></div>
+        </div>
+
+        <!-- Print Defaults -->
+        <div class="settings-section">
+          <h3>🖨️ Print Defaults</h3>
+          <div class="settings-grid">
+            <div class="setting-field">
+              <label>Default Mode</label>
+              <select id="settingMode">
+                <option value="barcode">Barcode (EAN/UPC)</option>
+                <option value="sku">QR Code (SKU)</option>
+              </select>
+            </div>
+            <div class="setting-field">
+              <label>Default Offset</label>
+              <input type="number" id="settingOffset" min="0" max="29" value="0">
+              <span class="help">Skip N labels for partially used sheets</span>
+            </div>
+            <div class="setting-field">
+              <label>Font Scale</label>
+              <input type="number" id="settingFontScale" min="0.5" max="1.5" step="0.05" value="0.85">
+            </div>
+            <div class="setting-field">
+              <label>Barcode Scale</label>
+              <input type="number" id="settingBarcodeScale" min="0.5" max="1.5" step="0.05" value="0.9">
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Profile Tuning -->
+        <div class="settings-section">
+          <h3>🔧 Profile Tuning</h3>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            Fine-tune the active profile's dimensions and margins (in inches).
+          </p>
+          <div class="settings-grid" id="profileTuning"></div>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+          <button class="btn btn-primary" id="saveSettings">💾 Save Settings</button>
+          <button class="btn btn-secondary" id="alignmentTest">📐 Print Alignment Test</button>
+          <button class="btn btn-secondary" id="resetDefaults">↺ Reset to Defaults</button>
+        </div>
+      </div>
+
+      <!-- ═══ History Tab ═══ -->
+      <div class="tab-panel" id="tab-history">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-shrink: 0;">
+          <h2 style="font-size: 16px;">Print History</h2>
+          <button class="btn btn-secondary btn-sm" id="refreshHistory">↻ Refresh</button>
+        </div>
+        <div style="overflow-y: auto; flex: 1;">
+          <table class="history-table" id="historyTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>Labels</th>
+                <th>Mode</th>
+                <th>Profile</th>
+                <th>Offset</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Print Queue (Right Sidebar) ─── -->
+    <div class="print-queue-panel">
+      <div class="queue-header">
+        <h2>🖨️ Print Queue</h2>
+        <span class="queue-count" id="queueCount">0</span>
+      </div>
+
+      <!-- Queue Controls -->
+      <div class="queue-controls">
+        <div class="queue-row">
+          <label>Mode:</label>
+          <select id="queueMode" style="flex:1;">
+            <option value="barcode">Barcode (EAN/UPC)</option>
+            <option value="sku">QR Code (SKU)</option>
+          </select>
+        </div>
+        <div class="queue-row">
+          <label>Offset:</label>
+          <input type="number" id="queueOffset" min="0" max="29" value="0" style="width:60px;">
+          <span style="font-size:11px; color:var(--text-muted);">labels to skip</span>
+        </div>
+      </div>
+
+      <!-- Queue Items -->
+      <div class="queue-list" id="queueList">
+        <div class="queue-empty">
+          <div class="icon">🏷️</div>
+          <div>No labels in queue</div>
+          <div style="font-size: 11px;">Click products to add them</div>
+        </div>
+      </div>
+
+      <!-- Queue Footer -->
+      <div class="queue-footer">
+        <div class="queue-summary">
+          <span>Total labels: <strong id="totalLabels">0</strong></span>
+          <span>Sheets: <strong id="totalSheets">0</strong></span>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn btn-danger btn-sm" id="clearQueue" style="flex:1;">Clear All</button>
+          <button class="btn btn-success" id="generatePDF" style="flex:2;" disabled>
+            🖨️ Generate PDF
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ─── Status Bar ─── -->
+  <div class="status-bar">
+    <span id="statusLeft">Ready</span>
+    <span id="statusRight"></span>
+  </div>
+
+  <!-- ─── Toast Container ─── -->
+  <div class="toast-container" id="toasts"></div>
+
+  <!-- ─── Loading Overlay ─── -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div style="text-align:center;">
+      <div class="loading-spinner"></div>
+      <div style="margin-top:12px; color:var(--text-secondary); font-size:13px;" id="loadingText">Loading...</div>
+    </div>
+  </div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// Shopify Labels — Frontend Application
+// ═══════════════════════════════════════════════════════════════════════════════
+
+(function() {
+  'use strict';
+
+  // ─── State ─────────────────────────────────────────────────────────────────
+  const state = {
+    shop: null,
+    products: [],           // All products from Shopify
+    filteredProducts: [],   // After search/filter
+    queue: [],              // Print queue: [{ id, variantId, name, barcode, price, image, qty }]
+    settings: null,
+    sortField: 'name',
+    sortDir: 'asc',
+  };
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  function getShopParam() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('shop');
+  }
+
+  async function apiCall(endpoint, method = 'GET', body = null) {
+    const shop = state.shop;
+    const sep = endpoint.includes('?') ? '&' : '?';
+    const url = `${endpoint}${sep}shop=${encodeURIComponent(shop)}`;
+
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+
+    const res = await fetch(url, opts);
+    if (!res.ok) {
+      if (res.headers.get('content-type')?.includes('application/json')) {
+        const err = await res.json();
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return res;
+  }
+
+  function toast(message, type = 'info') {
+    const container = document.getElementById('toasts');
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = message;
+    container.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
+  }
+
+  function showLoading(text = 'Loading...') {
+    document.getElementById('loadingText').textContent = text;
+    document.getElementById('loadingOverlay').classList.add('active');
+  }
+
+  function hideLoading() {
+    document.getElementById('loadingOverlay').classList.remove('active');
+  }
+
+  function setStatus(text, side = 'left') {
+    document.getElementById(side === 'left' ? 'statusLeft' : 'statusRight').textContent = text;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ─── Tab Navigation ────────────────────────────────────────────────────────
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+
+      if (btn.dataset.tab === 'history') loadHistory();
+      if (btn.dataset.tab === 'settings') renderSettings();
+    });
+  });
+
+  // ─── Products ──────────────────────────────────────────────────────────────
+
+  async function loadProducts() {
+    try {
+      showLoading('Loading products from Shopify...');
+      const res = await apiCall('/api/products');
+      const data = await res.json();
+      state.products = data.products || [];
+
+      // Build filter options
+      buildFilterOptions();
+      applyFilters();
+      setStatus(`${state.products.length} products loaded`);
+      toast(`Loaded ${state.products.length} products`, 'success');
+    } catch (err) {
+      toast('Failed to load products: ' + err.message, 'error');
+      setStatus('Error loading products');
+    } finally {
+      hideLoading();
+    }
+  }
+
+  function buildFilterOptions() {
+    const types = new Set();
+    const vendors = new Set();
+
+    state.products.forEach(p => {
+      if (p.product_type) types.add(p.product_type);
+      if (p.vendor) vendors.add(p.vendor);
+    });
+
+    const typeSelect = document.getElementById('filterType');
+    const vendorSelect = document.getElementById('filterVendor');
+
+    // Preserve current selections
+    const currentType = typeSelect.value;
+    const currentVendor = vendorSelect.value;
+
+    typeSelect.innerHTML = '<option value="">All Types</option>';
+    [...types].sort().forEach(t => {
+      typeSelect.innerHTML += `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`;
+    });
+
+    vendorSelect.innerHTML = '<option value="">All Vendors</option>';
+    [...vendors].sort().forEach(v => {
+      vendorSelect.innerHTML += `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`;
+    });
+
+    typeSelect.value = currentType;
+    vendorSelect.value = currentVendor;
+  }
+
+  function applyFilters() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+    const filterType = document.getElementById('filterType').value;
+    const filterVendor = document.getElementById('filterVendor').value;
+
+    let filtered = state.products.filter(p => {
+      // Only include active products
+      if (p.status !== 'active') return false;
+
+      // Search across name, barcode, vendor, type, tags
+      if (searchTerm) {
+        const searchFields = [
+          p.title || '',
+          p.vendor || '',
+          p.product_type || '',
+          p.tags || '',
+          ...(p.variants || []).map(v => v.barcode || ''),
+          ...(p.variants || []).map(v => v.sku || ''),
+        ].join(' ').toLowerCase();
+
+        if (!searchFields.includes(searchTerm)) return false;
+      }
+
+      if (filterType && p.product_type !== filterType) return false;
+      if (filterVendor && p.vendor !== filterVendor) return false;
+
+      return true;
+    });
+
+    // Sort
+    const { sortField, sortDir } = state;
+    filtered.sort((a, b) => {
+      let va, vb;
+      if (sortField === 'name') {
+        va = (a.title || '').toLowerCase();
+        vb = (b.title || '').toLowerCase();
+      } else if (sortField === 'price') {
+        va = parseFloat(a.variants?.[0]?.price) || 0;
+        vb = parseFloat(b.variants?.[0]?.price) || 0;
+      } else if (sortField === 'type') {
+        va = (a.product_type || '').toLowerCase();
+        vb = (b.product_type || '').toLowerCase();
+      }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    state.filteredProducts = filtered;
+    renderProductGrid();
+    document.getElementById('statusRight').textContent = `Showing ${filtered.length} of ${state.products.length}`;
+  }
+
+  function renderProductGrid() {
+    const grid = document.getElementById('productGrid');
+    const products = state.filteredProducts;
+
+    if (products.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column:1/-1; text-align:center; padding:60px 20px; color:var(--text-muted);">
+          <div style="font-size:40px; margin-bottom:10px;">🔍</div>
+          No products match your search
+        </div>`;
+      return;
+    }
+
+    grid.innerHTML = products.map(product => {
+      const variant = product.variants?.[0];
+      const price = variant ? parseFloat(variant.price) : 0;
+      const barcode = variant?.barcode || '';
+      const sku = variant?.sku || '';
+      const image = product.images?.[0]?.src || '';
+      const variantId = variant?.id || '';
+      const inQueue = state.queue.some(q => q.variantId === variantId);
+
+      return `
+        <div class="product-card${inQueue ? ' in-queue' : ''}"
+             data-product-id="${product.id}"
+             data-variant-id="${variantId}"
+             data-name="${escapeHtml(product.title)}"
+             data-barcode="${escapeHtml(barcode)}"
+             data-sku="${escapeHtml(sku)}"
+             data-price="${price}"
+             data-image="${escapeHtml(image)}">
+          <img class="product-card-img" src="${escapeHtml(image) || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDQiIGhlaWdodD0iNDQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQ0IiBoZWlnaHQ9IjQ0IiBmaWxsPSIjMjUyNTQ1Ii8+PHRleHQgeD0iMjIiIHk9IjI2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjNmM2YzhhIiBmb250LXNpemU9IjE0Ij7wn5OmPC90ZXh0Pjwvc3ZnPg=='}" 
+               alt="" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDQiIGhlaWdodD0iNDQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQ0IiBoZWlnaHQ9IjQ0IiBmaWxsPSIjMjUyNTQ1Ii8+PHRleHQgeD0iMjIiIHk9IjI2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjNmM2YzhhIiBmb250LXNpemU9IjE0Ij7wn5OmPC90ZXh0Pjwvc3ZnPg=='">
+          <div class="product-card-info">
+            <div class="product-card-title">${escapeHtml(product.title)}</div>
+            <div class="product-card-meta">
+              <span class="product-card-price">$${price.toFixed(2)}</span>
+              ${barcode ? `<span class="product-card-barcode">${escapeHtml(barcode)}</span>` : ''}
+              ${product.product_type ? `<span class="product-card-type">${escapeHtml(product.product_type)}</span>` : ''}
+            </div>
+          </div>
+          <button class="product-card-add" title="Add to print queue">+</button>
+          <span class="product-card-check">✓</span>
+        </div>`;
+    }).join('');
+
+    // Attach click handlers
+    grid.querySelectorAll('.product-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        // Don't trigger on the add button itself since we handle it here anyway
+        const variantId = card.dataset.variantId;
+        const existing = state.queue.find(q => q.variantId === variantId);
+        if (existing) {
+          existing.qty++;
+        } else {
+          state.queue.push({
+            id: card.dataset.productId,
+            variantId,
+            name: card.dataset.name,
+            barcode: card.dataset.barcode,
+            sku: card.dataset.sku,
+            price: parseFloat(card.dataset.price),
+            image: card.dataset.image,
+            qty: 1,
+          });
+        }
+        renderQueue();
+        renderProductGrid();
+      });
+    });
+  }
+
+  // ─── Search / Filter Event Listeners ────────────────────────────────────
+
+  let searchTimeout;
+  document.getElementById('searchInput').addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(applyFilters, 200);
+  });
+
+  document.getElementById('filterType').addEventListener('change', applyFilters);
+  document.getElementById('filterVendor').addEventListener('change', applyFilters);
+
+  document.querySelectorAll('.sort-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const field = btn.dataset.sort;
+      if (state.sortField === field) {
+        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sortField = field;
+        state.sortDir = 'asc';
+      }
+      document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyFilters();
+    });
+  });
+
+  document.getElementById('refreshProducts').addEventListener('click', loadProducts);
+
+  // ─── Print Queue ───────────────────────────────────────────────────────────
+
+  function renderQueue() {
+    const list = document.getElementById('queueList');
+    const count = document.getElementById('queueCount');
+    const totalLabelsEl = document.getElementById('totalLabels');
+    const totalSheetsEl = document.getElementById('totalSheets');
+    const generateBtn = document.getElementById('generatePDF');
+
+    const totalQty = state.queue.reduce((sum, q) => sum + q.qty, 0);
+    count.textContent = totalQty;
+    totalLabelsEl.textContent = totalQty;
+
+    // Calculate sheets based on active profile
+    const labelsPerSheet = getLabelsPerSheet();
+    const offset = parseInt(document.getElementById('queueOffset').value) || 0;
+    const sheetsNeeded = Math.ceil((totalQty + offset) / labelsPerSheet);
+    totalSheetsEl.textContent = sheetsNeeded;
+
+    generateBtn.disabled = totalQty === 0;
+
+    if (state.queue.length === 0) {
+      list.innerHTML = `
+        <div class="queue-empty">
+          <div class="icon">🏷️</div>
+          <div>No labels in queue</div>
+          <div style="font-size:11px;">Click products to add them</div>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = state.queue.map((item, idx) => `
+      <div class="queue-item" data-idx="${idx}">
+        <img class="queue-item-img" src="${escapeHtml(item.image) || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzYiIGhlaWdodD0iMzYiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjM2IiBoZWlnaHQ9IjM2IiBmaWxsPSIjMjUyNTQ1Ii8+PC9zdmc+'}" alt=""
+             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzYiIGhlaWdodD0iMzYiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjM2IiBoZWlnaHQ9IjM2IiBmaWxsPSIjMjUyNTQ1Ii8+PC9zdmc+'">
+        <div class="queue-item-info">
+          <div class="queue-item-name">${escapeHtml(item.name)}</div>
+          <div class="queue-item-meta">
+            <span class="queue-item-price">$${item.price.toFixed(2)}</span>
+            ${item.barcode ? `<span>${escapeHtml(item.barcode)}</span>` : '<span style="color:var(--warning);">No barcode</span>'}
+          </div>
+        </div>
+        <div class="queue-item-qty">
+          <button class="qty-minus" data-idx="${idx}">−</button>
+          <span>${item.qty}</span>
+          <button class="qty-plus" data-idx="${idx}">+</button>
+        </div>
+        <button class="queue-item-remove" data-idx="${idx}" title="Remove">✕</button>
+      </div>
+    `).join('');
+
+    // Attach queue event handlers
+    list.querySelectorAll('.qty-minus').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.idx);
+        if (state.queue[idx].qty > 1) {
+          state.queue[idx].qty--;
+        } else {
+          state.queue.splice(idx, 1);
+        }
+        renderQueue();
+        renderProductGrid();
+      });
+    });
+
+    list.querySelectorAll('.qty-plus').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.idx);
+        state.queue[idx].qty++;
+        renderQueue();
+      });
+    });
+
+    list.querySelectorAll('.queue-item-remove').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.idx);
+        state.queue.splice(idx, 1);
+        renderQueue();
+        renderProductGrid();
+      });
+    });
+  }
+
+  function getLabelsPerSheet() {
+    if (!state.settings) return 30; // default for avery_6460
+    const profile = state.settings.profiles?.[state.settings.active_profile];
+    if (!profile) return 30;
+    return (profile.labels_per_row || 3) * (profile.labels_per_col || 10);
+  }
+
+  document.getElementById('queueOffset').addEventListener('change', renderQueue);
+
+  document.getElementById('clearQueue').addEventListener('click', () => {
+    state.queue = [];
+    renderQueue();
+    renderProductGrid();
+  });
+
+  // ─── Generate PDF ──────────────────────────────────────────────────────────
+
+  document.getElementById('generatePDF').addEventListener('click', async () => {
+    if (state.queue.length === 0) return;
+
+    const mode = document.getElementById('queueMode').value;
+    const offset = parseInt(document.getElementById('queueOffset').value) || 0;
+
+    // Expand queue items by qty into flat product list
+    const products = [];
+    for (const item of state.queue) {
+      for (let i = 0; i < item.qty; i++) {
+        products.push({
+          name: item.name,
+          barcode: mode === 'barcode' ? (item.barcode || '') : (item.sku || item.barcode || ''),
+          price: item.price,
+        });
+      }
+    }
+
+    try {
+      showLoading(`Generating ${products.length} labels...`);
+
+      const res = await fetch(`/api/generate-labels?shop=${encodeURIComponent(state.shop)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products, offset, mode }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP ${res.status}`);
+      }
+
+      // Download the PDF
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `labels-${mode}-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast(`Generated ${products.length} labels!`, 'success');
+      setStatus(`Last print: ${products.length} labels`);
+    } catch (err) {
+      toast('Failed to generate labels: ' + err.message, 'error');
+    } finally {
+      hideLoading();
+    }
+  });
+
+  // ─── Settings ──────────────────────────────────────────────────────────────
+
+  async function loadSettings() {
+    try {
+      const res = await apiCall('/api/settings');
+      state.settings = await res.json();
+      applySettingsToUI();
+    } catch (err) {
+      toast('Failed to load settings: ' + err.message, 'error');
+    }
+  }
+
+  function applySettingsToUI() {
+    if (!state.settings) return;
+    document.getElementById('settingMode').value = state.settings.default_mode || 'barcode';
+    document.getElementById('settingOffset').value = state.settings.default_offset || 0;
+    document.getElementById('settingFontScale').value = state.settings.font_scale || 0.85;
+    document.getElementById('settingBarcodeScale').value = state.settings.barcode_scale || 0.9;
+
+    // Queue defaults
+    document.getElementById('queueMode').value = state.settings.default_mode || 'barcode';
+    document.getElementById('queueOffset').value = state.settings.default_offset || 0;
+  }
+
+  function renderSettings() {
+    if (!state.settings) return;
+    renderProfileGrid();
+    renderProfileTuning();
+  }
+
+  function renderProfileGrid() {
+    const grid = document.getElementById('profileGrid');
+    const profiles = state.settings.profiles || {};
+    const activeProfile = state.settings.active_profile || 'avery_6460';
+
+    grid.innerHTML = Object.entries(profiles).map(([key, profile]) => `
+      <div class="profile-card${key === activeProfile ? ' active' : ''}" data-profile="${key}">
+        <h4>${escapeHtml(profile.name || key)}</h4>
+        <p>${escapeHtml(profile.description || '')}</p>
+        <div class="dims">
+          ${profile.label_width}" × ${profile.label_height}" &nbsp;|&nbsp;
+          ${profile.labels_per_row} × ${profile.labels_per_col} per sheet
+        </div>
+      </div>
+    `).join('');
+
+    grid.querySelectorAll('.profile-card').forEach(card => {
+      card.addEventListener('click', () => {
+        state.settings.active_profile = card.dataset.profile;
+        renderSettings();
+        renderQueue(); // Update sheet count
+      });
+    });
+  }
+
+  function renderProfileTuning() {
+    const container = document.getElementById('profileTuning');
+    const activeKey = state.settings.active_profile || 'avery_6460';
+    const profile = state.settings.profiles?.[activeKey];
+    if (!profile) return;
+
+    const fields = [
+      { key: 'label_width', label: 'Label Width (in)', step: 0.025 },
+      { key: 'label_height', label: 'Label Height (in)', step: 0.025 },
+      { key: 'labels_per_row', label: 'Labels Per Row', step: 1, min: 1, max: 10 },
+      { key: 'labels_per_col', label: 'Labels Per Column', step: 1, min: 1, max: 20 },
+      { key: 'page_margin_left', label: 'Left Margin (in)', step: 0.0125 },
+      { key: 'page_margin_top', label: 'Top Margin (in)', step: 0.0125 },
+      { key: 'label_margin', label: 'Label Gap (in)', step: 0.0125 },
+    ];
+
+    container.innerHTML = fields.map(f => `
+      <div class="setting-field">
+        <label>${f.label}</label>
+        <input type="number" id="tune_${f.key}" value="${profile[f.key]}"
+          step="${f.step}" ${f.min !== undefined ? `min="${f.min}"` : ''} ${f.max !== undefined ? `max="${f.max}"` : ''}>
+      </div>
+    `).join('');
+
+    // Live update as values change
+    fields.forEach(f => {
+      document.getElementById(`tune_${f.key}`).addEventListener('change', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val)) {
+          state.settings.profiles[activeKey][f.key] = val;
+          renderQueue(); // Update sheet count
+        }
+      });
+    });
+  }
+
+  document.getElementById('saveSettings').addEventListener('click', async () => {
+    try {
+      // Collect settings from UI
+      state.settings.default_mode = document.getElementById('settingMode').value;
+      state.settings.default_offset = parseInt(document.getElementById('settingOffset').value) || 0;
+      state.settings.font_scale = parseFloat(document.getElementById('settingFontScale').value) || 0.85;
+      state.settings.barcode_scale = parseFloat(document.getElementById('settingBarcodeScale').value) || 0.9;
+
+      await apiCall('/api/settings', 'POST', { settings: state.settings });
+      toast('Settings saved!', 'success');
+    } catch (err) {
+      toast('Failed to save settings: ' + err.message, 'error');
+    }
+  });
+
+  document.getElementById('alignmentTest').addEventListener('click', async () => {
+    try {
+      showLoading('Generating alignment test...');
+      const res = await fetch(`/api/alignment-test?shop=${encodeURIComponent(state.shop)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: state.settings?.default_mode || 'barcode',
+          profile: state.settings?.active_profile || 'avery_6460',
+        }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'alignment-test.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast('Alignment test PDF downloaded', 'success');
+    } catch (err) {
+      toast('Failed: ' + err.message, 'error');
+    } finally {
+      hideLoading();
+    }
+  });
+
+  document.getElementById('resetDefaults').addEventListener('click', () => {
+    if (!confirm('Reset all settings to defaults? This cannot be undone.')) return;
+    state.settings = null;
+    loadSettings().then(() => {
+      renderSettings();
+      toast('Settings reset to defaults', 'info');
+    });
+  });
+
+  // ─── History ───────────────────────────────────────────────────────────────
+
+  async function loadHistory() {
+    try {
+      const res = await apiCall('/api/history');
+      const data = await res.json();
+      renderHistory(data.history || []);
+    } catch (err) {
+      toast('Failed to load history: ' + err.message, 'error');
+    }
+  }
+
+  function renderHistory(history) {
+    const tbody = document.getElementById('historyBody');
+
+    if (history.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:40px;">No print history yet</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = history.map((h, i) => {
+      const date = new Date(h.created_at).toLocaleString();
+      const modeClass = h.mode === 'barcode' ? 'badge-barcode' : 'badge-sku';
+      const modeLabel = h.mode === 'barcode' ? 'Barcode' : 'QR/SKU';
+
+      return `
+        <tr>
+          <td>${history.length - i}</td>
+          <td>${escapeHtml(date)}</td>
+          <td><strong>${h.label_count}</strong></td>
+          <td><span class="badge ${modeClass}">${modeLabel}</span></td>
+          <td>${escapeHtml(h.profile_name || 'avery_6460')}</td>
+          <td>${h.offset_used || 0}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  document.getElementById('refreshHistory').addEventListener('click', loadHistory);
+
+  // ─── Initialize ────────────────────────────────────────────────────────────
+
+  async function init() {
+    state.shop = getShopParam();
+
+    if (!state.shop) {
+      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--text-muted);">Missing shop parameter. Open this app from Shopify admin.</div>';
+      return;
+    }
+
+    // Load shop info
+    try {
+      const res = await apiCall('/api/shop');
+      const shop = await res.json();
+      document.getElementById('shopName').textContent = shop.name || state.shop;
+    } catch (err) {
+      document.getElementById('shopName').textContent = state.shop;
+    }
+
+    // Load settings and products in parallel
+    await Promise.all([loadSettings(), loadProducts()]);
+    renderSettings();
+    renderQueue();
+  }
+
+  init();
+
+})();
+</script>
+
+</body>
+</html>
