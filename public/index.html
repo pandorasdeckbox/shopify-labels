@@ -588,6 +588,10 @@
 
     const res = await fetch(url, opts);
     if (!res.ok) {
+      if (res.status === 401) {
+        window.top.location.href = `/auth?shop=${encodeURIComponent(shop)}`;
+        return new Promise(() => {}); // hang while redirecting
+      }
       if (res.headers.get('content-type')?.includes('application/json')) {
         const err = await res.json();
         throw new Error(err.error || `HTTP ${res.status}`);

@@ -119,8 +119,19 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date()
 
 // ─── Serve App Shell ──────────────────────────────────────────────────────────
 
-app.get('/', (req, res) => {
-  if (!req.query.shop) return res.status(400).send('Missing shop parameter');
+app.get('/', async (req, res) => {
+  const { shop, host } = req.query;
+  if (!shop) return res.status(400).send('Missing shop parameter');
+
+  const sanitizedShop = shopify.utils.sanitizeShop(shop);
+  if (!sanitizedShop) return res.status(400).send('Invalid shop parameter');
+
+  const session = await sessionStorage.loadSession(`offline_${sanitizedShop}`);
+  if (!session) {
+    const authUrl = `/auth?shop=${encodeURIComponent(sanitizedShop)}${host ? `&host=${encodeURIComponent(String(host))}` : ''}`;
+    return res.send(`<!DOCTYPE html><html><head><script>window.top.location.href=${JSON.stringify(authUrl)};<\/script></head><body>Redirecting...</body></html>`);
+  }
+
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
