@@ -113,35 +113,74 @@ async function drawPriceOnlyLabel(page, x, y, width, height, product, opts) {
   const { fontScale, helvetica, helveticaBold } = opts;
   const price = product.price;
 
-  // Giant price centered
-  const fontSize = Math.min(48 * fontScale, height * 0.8 * 0.875) * 1.1;
+  // Giant price centered — try font options matching Python logic
+  const remainingHeight = height * 0.8;
+  const baseFontSize = Math.min(Math.floor(48 * fontScale), Math.floor(remainingHeight * 0.875));
   const priceText = price.toFixed(2);
-  const dollarFontSize = fontSize * 0.5;
 
-  const dollarWidth = helveticaBold.widthOfTextAtSize('$', dollarFontSize);
-  const numberWidth = helveticaBold.widthOfTextAtSize(priceText, fontSize);
-  const totalWidth = dollarWidth + numberWidth;
+  const fontOptions = [
+    { font: helveticaBold, size: baseFontSize * 1.1 },
+    { font: helvetica, size: baseFontSize * 1.175 },
+    { font: helveticaBold, size: baseFontSize },
+  ];
 
-  const priceX = x + (width - totalWidth) / 2;
-  const priceY = y + height * 0.62 - fontSize / 2;
+  let priceDrawn = false;
+  for (const opt of fontOptions) {
+    const dollarFontSize = Math.floor(opt.size * 0.5);
+    const dollarWidth = opt.font.widthOfTextAtSize('$', dollarFontSize);
+    const numberWidth = opt.font.widthOfTextAtSize(priceText, opt.size);
+    const totalWidth = dollarWidth + numberWidth;
 
-  // Dollar sign (superscript)
-  page.drawText('$', {
-    x: priceX,
-    y: priceY + fontSize * 0.3,
-    size: dollarFontSize,
-    font: helveticaBold,
-    color: rgb(0, 0, 0),
-  });
+    if (totalWidth <= width - 20) {
+      const priceX = x + (width - totalWidth) / 2;
+      const priceY = y + height * 0.62 - opt.size / 2;
 
-  // Price numbers
-  page.drawText(priceText, {
-    x: priceX + dollarWidth,
-    y: priceY,
-    size: fontSize,
-    font: helveticaBold,
-    color: rgb(0, 0, 0),
-  });
+      // Dollar sign (superscript)
+      page.drawText('$', {
+        x: priceX,
+        y: priceY + opt.size * 0.3,
+        size: dollarFontSize,
+        font: opt.font,
+        color: rgb(0, 0, 0),
+      });
+
+      // Price numbers
+      page.drawText(priceText, {
+        x: priceX + dollarWidth,
+        y: priceY,
+        size: opt.size,
+        font: opt.font,
+        color: rgb(0, 0, 0),
+      });
+
+      priceDrawn = true;
+      break;
+    }
+  }
+
+  // Final fallback if none fit
+  if (!priceDrawn) {
+    const fontSize = baseFontSize;
+    const dollarFontSize = Math.floor(fontSize * 0.5);
+    const dollarWidth = helveticaBold.widthOfTextAtSize('$', dollarFontSize);
+    const priceX = x + 10;
+    const priceY = y + height * 0.62 - fontSize / 2;
+
+    page.drawText('$', {
+      x: priceX,
+      y: priceY + fontSize * 0.3,
+      size: dollarFontSize,
+      font: helveticaBold,
+      color: rgb(0, 0, 0),
+    });
+    page.drawText(priceText, {
+      x: priceX + dollarWidth,
+      y: priceY,
+      size: fontSize,
+      font: helveticaBold,
+      color: rgb(0, 0, 0),
+    });
+  }
 
   // Tiny product name at bottom
   if (product.name) {
@@ -197,7 +236,7 @@ async function drawBarcodeLabel(page, pdfDoc, x, y, width, height, product, opts
   // Product name in tiny font (just below barcode) — center aligned
   const nameSize = 5 * fontScale;
   const barcodeToTitleSpacing = 3;
-  const nameY = barcodeY - barcodeToTitleSpacing - nameSize;
+  const nameY = barcodeY - barcodeToTitleSpacing;
 
   let name = product.name;
   const maxChars = Math.floor(barcodeWidth / 3);
@@ -230,7 +269,7 @@ async function drawBarcodeLabel(page, pdfDoc, x, y, width, height, product, opts
   const priceText = price.toFixed(2);
 
   for (const opt of fontOptions) {
-    const dollarSize = opt.size * 0.5;
+    const dollarSize = Math.floor(opt.size * 0.5);
     const dollarW = opt.font.widthOfTextAtSize('$', dollarSize);
     const numberW = opt.font.widthOfTextAtSize(priceText, opt.size);
     const totalW = dollarW + numberW;
