@@ -286,7 +286,103 @@ app.get('/api/products', async (req, res) => {
     }
 
     log('INFO', `Fetched ${allProducts.length} products for ${session.shop}`);
-    res.json({ products: allProducts });
+
+    // Fetch collections and product-collection mappings
+    let collections = [];
+    const productCollectionMap = {}; // productId -> [collectionTitle, ...]
+    try {
+      // Fetch custom collections
+      let customCollections = [];
+      let ccParams = { limit: 250 };
+      let ccHasMore = true;
+      while (ccHasMore) {
+        const ccRes = await client.get({ path: 'custom_collections', query: ccParams });
+        customCollections = customCollections.concat(ccRes.body.custom_collections || []);
+        if (ccRes.pageInfo?.nextPage) {
+          ccParams = ccRes.pageInfo.nextPage.query;
+        } else {
+          ccHasMore = false;
+        }
+      }
+
+      // Fetch smart collections
+      let smartCollections = [];
+      let scParams = { limit: 250 };
+      let scHasMore = true;
+      while (scHasMore) {
+        const scRes = await client.get({ path: 'smart_collections', query: scParams });
+        smartCollections = smartCollections.concat(scRes.body.smart_collections || []);
+        if (scRes.pageInfo?.nextPage) {
+          scParams = scRes.pageInfo.nextPage.query;
+        } else {
+          scHasMore = false;
+        }
+      }
+
+      collections = [...customCollections, ...smartCollections];
+
+      // Fetch collects (product-to-custom-collection mappings)
+      let allCollects = [];
+      let collectParams = { limit: 250 };
+      let collectHasMore = true;
+      while (collectHasMore) {
+        const colRes = await client.get({ path: 'collects', query: collectParams });
+        allCollects = allCollects.concat(colRes.body.collects || []);
+        if (colRes.pageInfo?.nextPage) {
+          collectParams = colRes.pageInfo.nextPage.query;
+        } else {
+          collectHasMore = false;
+        }
+      }
+
+      // Build collection id -> title map
+      const collectionIdToTitle = {};
+      collections.forEach(c => { collectionIdToTitle[c.id] = c.title; });
+
+      // Map products to custom collection titles via collects
+      allCollects.forEach(col => {
+        const title = collectionIdToTitle[col.collection_id];
+        if (title) {
+          if (!productCollectionMap[col.product_id]) productCollectionMap[col.product_id] = [];
+          if (!productCollectionMap[col.product_id].includes(title)) {
+            productCollectionMap[col.product_id].push(title);
+          }
+        }
+      });
+
+      // For smart collections, fetch product ids per collection
+      for (const sc of smartCollections) {
+        let scProdParams = { limit: 250, collection_id: sc.id, fields: 'id' };
+        let scProdHasMore = true;
+        while (scProdHasMore) {
+          const spRes = await client.get({ path: 'products', query: scProdParams });
+          const prods = spRes.body.products || [];
+          prods.forEach(p => {
+            if (!productCollectionMap[p.id]) productCollectionMap[p.id] = [];
+            if (!productCollectionMap[p.id].includes(sc.title)) {
+              productCollectionMap[p.id].push(sc.title);
+            }
+          });
+          if (spRes.pageInfo?.nextPage) {
+            scProdParams = spRes.pageInfo.nextPage.query;
+          } else {
+            scProdHasMore = false;
+          }
+        }
+      }
+
+      log('INFO', `Fetched ${collections.length} collections, ${allCollects.length} collects`);
+    } catch (colErr) {
+      log('ERROR', 'Failed to fetch collections (non-fatal)', { error: colErr.message });
+    }
+
+    // Attach collection names to products
+    allProducts.forEach(p => {
+      p.collections = productCollectionMap[p.id] || [];
+    });
+
+    const collectionNames = [...new Set(collections.map(c => c.title))].sort();
+    res.json({ products: allProducts, collections: collectionNames });
   } catch (err) {
     log('ERROR', 'Failed to fetch products', { error: err.message });
     res.status(500).json({ error: 'Failed to fetch products' });

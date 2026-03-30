@@ -174,10 +174,10 @@
     /* ─── Search Bar ─── */
     .search-bar {
       display: flex; gap: 8px; align-items: center;
-      padding: 12px 0; flex-shrink: 0;
+      padding: 12px 0; flex-shrink: 0; flex-wrap: wrap;
     }
     .search-input-wrap {
-      flex: 1; position: relative;
+      flex: 2; position: relative; min-width: 200px;
     }
     .search-input-wrap input {
       width: 100%; padding-left: 36px;
@@ -377,18 +377,12 @@
         <!-- Search / Filter Bar -->
         <div class="search-bar">
           <div class="search-input-wrap">
-            <input type="search" id="searchInput" placeholder="Search products by name, barcode, vendor, type..." autocomplete="off">
+            <input type="search" id="searchInput" placeholder="Search products by name, barcode, type..." autocomplete="off">
           </div>
           <div class="filter-group">
-            <label>Type:</label>
-            <select id="filterType">
-              <option value="">All Types</option>
-            </select>
-          </div>
-          <div class="filter-group">
-            <label>Vendor:</label>
-            <select id="filterVendor">
-              <option value="">All Vendors</option>
+            <label>Collection:</label>
+            <select id="filterCollection">
+              <option value="">All Collections</option>
             </select>
           </div>
           <div class="sort-group">
@@ -564,6 +558,7 @@
   const state = {
     shop: null,
     products: [],           // All products from Shopify
+    collections: [],        // Collection names from Shopify
     filteredProducts: [],   // After search/filter
     queue: [],              // Print queue: [{ id, variantId, name, barcode, price, image, qty }]
     settings: null,
@@ -651,6 +646,7 @@
       const res = await apiCall('/api/products');
       const data = await res.json();
       state.products = data.products || [];
+      state.collections = data.collections || [];
 
       // Build filter options
       buildFilterOptions();
@@ -666,39 +662,27 @@
   }
 
   function buildFilterOptions() {
-    const types = new Set();
-    const vendors = new Set();
-
+    const collectionSet = new Set();
     state.products.forEach(p => {
-      if (p.product_type) types.add(p.product_type);
-      if (p.vendor) vendors.add(p.vendor);
+      (p.collections || []).forEach(c => collectionSet.add(c));
+    });
+    // Also add from the collections list returned by the API
+    (state.collections || []).forEach(c => collectionSet.add(c));
+
+    const collectionSelect = document.getElementById('filterCollection');
+    const currentCollection = collectionSelect.value;
+
+    collectionSelect.innerHTML = '<option value="">All Collections</option>';
+    [...collectionSet].sort().forEach(c => {
+      collectionSelect.innerHTML += `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`;
     });
 
-    const typeSelect = document.getElementById('filterType');
-    const vendorSelect = document.getElementById('filterVendor');
-
-    // Preserve current selections
-    const currentType = typeSelect.value;
-    const currentVendor = vendorSelect.value;
-
-    typeSelect.innerHTML = '<option value="">All Types</option>';
-    [...types].sort().forEach(t => {
-      typeSelect.innerHTML += `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`;
-    });
-
-    vendorSelect.innerHTML = '<option value="">All Vendors</option>';
-    [...vendors].sort().forEach(v => {
-      vendorSelect.innerHTML += `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`;
-    });
-
-    typeSelect.value = currentType;
-    vendorSelect.value = currentVendor;
+    collectionSelect.value = currentCollection;
   }
 
   function applyFilters() {
     const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
-    const filterType = document.getElementById('filterType').value;
-    const filterVendor = document.getElementById('filterVendor').value;
+    const filterCollection = document.getElementById('filterCollection').value;
 
     let filtered = state.products.filter(p => {
       // Only include active products
@@ -718,8 +702,7 @@
         if (!searchFields.includes(searchTerm)) return false;
       }
 
-      if (filterType && p.product_type !== filterType) return false;
-      if (filterVendor && p.vendor !== filterVendor) return false;
+      if (filterCollection && !(p.collections || []).includes(filterCollection)) return false;
 
       return true;
     });
@@ -828,8 +811,7 @@
     searchTimeout = setTimeout(applyFilters, 200);
   });
 
-  document.getElementById('filterType').addEventListener('change', applyFilters);
-  document.getElementById('filterVendor').addEventListener('change', applyFilters);
+  document.getElementById('filterCollection').addEventListener('change', applyFilters);
 
   document.querySelectorAll('.sort-btn').forEach(btn => {
     btn.addEventListener('click', () => {
