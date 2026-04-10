@@ -669,31 +669,87 @@
   // ─── Products ──────────────────────────────────────────────────────────────
 
   async function loadProducts(forceRefresh = false) {
+    const refreshParam = forceRefresh ? '&refresh=1' : '';
+    const shop = state.shop;
+
+    // Try a quick cache check first — if cached, the server returns JSON fast
     try {
-      showLoading('Loading products from Shopify...');
-      const endpoint = forceRefresh ? '/api/products?refresh=1' : '/api/products';
-      const res = await apiCall(endpoint);
-      const data = await res.json();
-      state.products = data.products || [];
-      state.collections = data.collections || [];
-      state.collectionsLoaded = data.collectionsLoaded || false;
+      showLoading('Loading products...');
+      const cacheCheck = await fetch(`/api/products?shop=${encodeURIComponent(shop)}&cacheOnly=1${refreshParam}`);
 
-      buildFilterOptions();
-      state.currentPage = 1;
-      applyFilters();
-      setStatus(`${state.products.length} products loaded`);
-      toast(`Loaded ${state.products.length} products`, 'success');
+      if (cacheCheck.ok) {
+        const contentType = cacheCheck.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await cacheCheck.json();
+          if (data.products && data.products.length > 0) {
+            state.products = data.products;
+            state.collections = data.collections || [];
+            state.collectionsLoaded = data.collectionsLoaded || false;
+            buildFilterOptions();
+            state.currentPage = 1;
+            applyFilters();
+            setStatus(`${state.products.length} products loaded`);
+            toast(`Loaded ${state.products.length} products`, 'success');
+            hideLoading();
+            if (!state.collectionsLoaded) loadCollections();
+            return;
+          }
+        }
+      }
     } catch (err) {
-      toast('Failed to load products: ' + err.message, 'error');
-      setStatus('Error loading products');
-    } finally {
-      hideLoading();
+      console.warn('Cache check failed:', err.message);
     }
 
-    // Load collections in the background if not already loaded
-    if (!state.collectionsLoaded) {
-      loadCollections();
-    }
+    // Not cached — use SSE to stream batches progressively
+    hideLoading();
+    state.products = [];
+    state.currentPage = 1;
+    setStatus('Loading products...');
+
+    return new Promise((resolve) => {
+      const url = `/api/products?shop=${encodeURIComponent(shop)}${refreshParam}`;
+      const evtSource = new EventSource(url);
+
+      evtSource.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          if (msg.type === 'batch') {
+            state.products = state.products.concat(msg.products);
+            buildFilterOptions();
+            applyFilters();
+            setStatus(`Loading... ${msg.totalSoFar} products so far`);
+          } else if (msg.type === 'done') {
+            evtSource.close();
+            state.currentPage = 1;
+            applyFilters();
+            setStatus(`${msg.total} products loaded`);
+            toast(`Loaded ${msg.total} products`, 'success');
+            if (!state.collectionsLoaded) loadCollections();
+            resolve();
+          } else if (msg.type === 'error') {
+            evtSource.close();
+            toast('Failed to load products: ' + msg.error, 'error');
+            setStatus('Error loading products');
+            resolve();
+          }
+        } catch (parseErr) {
+          console.error('SSE parse error:', parseErr);
+        }
+      };
+
+      evtSource.onerror = () => {
+        evtSource.close();
+        if (state.products.length > 0) {
+          toast(`Loaded ${state.products.length} products (connection interrupted)`, 'info');
+          setStatus(`${state.products.length} products loaded (partial)`);
+        } else {
+          toast('Failed to load products', 'error');
+          setStatus('Error loading products');
+        }
+        resolve();
+      };
+    });
   }
 
   async function loadCollections(forceRefresh = false) {

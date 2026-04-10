@@ -383,7 +383,7 @@ async function fetchCollectionsData(client) {
   return { collectionNames, productCollectionMap };
 }
 
-// ─── API: Products (paginated response) ──────────────────────────────────────
+// ─── API: Products (SSE streaming for fresh fetches, JSON for cached) ────────
 
 app.get('/api/products', async (req, res) => {
   try {
@@ -391,38 +391,94 @@ app.get('/api/products', async (req, res) => {
     if (!session) return;
 
     const forceRefresh = req.query.refresh === '1';
+    const cacheOnly = req.query.cacheOnly === '1';
+    const wantStream = req.headers.accept === 'text/event-stream';
 
     // Check cache first
     let allProducts = !forceRefresh ? getCachedData(session.shop, 'products') : null;
 
-    if (!allProducts) {
+    // If cached, always return JSON (fast path)
+    if (allProducts) {
+      log('INFO', `Serving ${allProducts.length} cached products for ${session.shop}`);
+
+      const collectionData = getCachedData(session.shop, 'collectionNames');
+      const productCollectionMap = getCachedData(session.shop, 'productCollectionMap');
+      if (collectionData && productCollectionMap) {
+        allProducts.forEach(p => { p.collections = productCollectionMap[p.id] || []; });
+      }
+
+      return res.json({
+        products: allProducts,
+        collections: collectionData || [],
+        collectionsLoaded: !!collectionData,
+        total: allProducts.length,
+      });
+    }
+
+    // Not cached — if client only wanted cache, tell it to use SSE
+    if (cacheOnly) {
+      return res.status(204).end();
+    }
+
+    // Not cached — stream batches via SSE if client supports it
+    if (wantStream) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      });
+
+      const client = new shopify.clients.Rest({ session });
+      let allFetched = [];
+      let params = { limit: 250, fields: 'id,title,variants,images,product_type,vendor,tags,status' };
+      let hasMore = true;
+      let batchNum = 0;
+
+      while (hasMore) {
+        const response = await client.get({ path: 'products', query: params });
+        const products = response.body.products || [];
+        allFetched = allFetched.concat(products);
+        batchNum++;
+
+        // Send this batch to the client
+        res.write(`data: ${JSON.stringify({ type: 'batch', products, batchNum, totalSoFar: allFetched.length })}\n\n`);
+
+        if (response.pageInfo?.nextPage) {
+          params = response.pageInfo.nextPage.query;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      // Cache the full result
+      setCachedData(session.shop, { products: allFetched });
+      log('INFO', `Streamed ${allFetched.length} products in ${batchNum} batches for ${session.shop}`);
+
+      // Send done event
+      res.write(`data: ${JSON.stringify({ type: 'done', total: allFetched.length })}\n\n`);
+      res.end();
+    } else {
+      // Fallback: non-streaming JSON fetch
       const client = new shopify.clients.Rest({ session });
       allProducts = await fetchAllProducts(client);
       setCachedData(session.shop, { products: allProducts });
       log('INFO', `Fetched ${allProducts.length} products from Shopify for ${session.shop}`);
-    } else {
-      log('INFO', `Serving ${allProducts.length} cached products for ${session.shop}`);
-    }
 
-    // Attach collection data if already cached (non-blocking)
-    const collectionData = getCachedData(session.shop, 'collectionNames');
-    const productCollectionMap = getCachedData(session.shop, 'productCollectionMap');
-
-    if (collectionData && productCollectionMap) {
-      allProducts.forEach(p => {
-        p.collections = productCollectionMap[p.id] || [];
+      res.json({
+        products: allProducts,
+        collections: [],
+        collectionsLoaded: false,
+        total: allProducts.length,
       });
     }
-
-    res.json({
-      products: allProducts,
-      collections: collectionData || [],
-      collectionsLoaded: !!collectionData,
-      total: allProducts.length,
-    });
   } catch (err) {
     log('ERROR', 'Failed to fetch products', { error: err.message });
-    res.status(500).json({ error: 'Failed to fetch products' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to fetch products' });
+    } else {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+      res.end();
+    }
   }
 });
 
