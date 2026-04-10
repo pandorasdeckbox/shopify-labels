@@ -260,132 +260,199 @@ app.get('/api/shop', async (req, res) => {
   }
 });
 
-// ─── API: Products (paginated, full catalog) ─────────────────────────────────
+// ─── In-memory cache ─────────────────────────────────────────────────────────
+
+const dataCache = new Map(); // shop -> { products, collections, productCollectionMap, timestamp }
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCachedData(shop, key) {
+  const entry = dataCache.get(shop);
+  if (!entry || !entry[key]) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    dataCache.delete(shop);
+    return null;
+  }
+  return entry[key];
+}
+
+function setCachedData(shop, data) {
+  const existing = dataCache.get(shop) || {};
+  dataCache.set(shop, { ...existing, ...data, timestamp: Date.now() });
+}
+
+// ─── Shared fetch helpers ────────────────────────────────────────────────────
+
+async function fetchAllProducts(client) {
+  let allProducts = [];
+  let params = { limit: 250, fields: 'id,title,variants,images,product_type,vendor,tags,status' };
+  let hasMore = true;
+  while (hasMore) {
+    const response = await client.get({ path: 'products', query: params });
+    allProducts = allProducts.concat(response.body.products || []);
+    if (response.pageInfo?.nextPage) {
+      params = response.pageInfo.nextPage.query;
+    } else {
+      hasMore = false;
+    }
+  }
+  return allProducts;
+}
+
+async function fetchCollectionsData(client) {
+  const productCollectionMap = {};
+
+  // Custom collections
+  let customCollections = [];
+  let ccParams = { limit: 250 };
+  let ccHasMore = true;
+  while (ccHasMore) {
+    const ccRes = await client.get({ path: 'custom_collections', query: ccParams });
+    customCollections = customCollections.concat(ccRes.body.custom_collections || []);
+    if (ccRes.pageInfo?.nextPage) {
+      ccParams = ccRes.pageInfo.nextPage.query;
+    } else {
+      ccHasMore = false;
+    }
+  }
+
+  // Smart collections
+  let smartCollections = [];
+  let scParams = { limit: 250 };
+  let scHasMore = true;
+  while (scHasMore) {
+    const scRes = await client.get({ path: 'smart_collections', query: scParams });
+    smartCollections = smartCollections.concat(scRes.body.smart_collections || []);
+    if (scRes.pageInfo?.nextPage) {
+      scParams = scRes.pageInfo.nextPage.query;
+    } else {
+      scHasMore = false;
+    }
+  }
+
+  const collections = [...customCollections, ...smartCollections];
+
+  // Collects (product-to-custom-collection mappings)
+  let allCollects = [];
+  let collectParams = { limit: 250 };
+  let collectHasMore = true;
+  while (collectHasMore) {
+    const colRes = await client.get({ path: 'collects', query: collectParams });
+    allCollects = allCollects.concat(colRes.body.collects || []);
+    if (colRes.pageInfo?.nextPage) {
+      collectParams = colRes.pageInfo.nextPage.query;
+    } else {
+      collectHasMore = false;
+    }
+  }
+
+  // Build collection id -> title map
+  const collectionIdToTitle = {};
+  collections.forEach(c => { collectionIdToTitle[c.id] = c.title; });
+
+  allCollects.forEach(col => {
+    const title = collectionIdToTitle[col.collection_id];
+    if (title) {
+      if (!productCollectionMap[col.product_id]) productCollectionMap[col.product_id] = [];
+      if (!productCollectionMap[col.product_id].includes(title)) {
+        productCollectionMap[col.product_id].push(title);
+      }
+    }
+  });
+
+  // Smart collection product mapping
+  for (const sc of smartCollections) {
+    let scProdParams = { limit: 250, collection_id: sc.id, fields: 'id' };
+    let scProdHasMore = true;
+    while (scProdHasMore) {
+      const spRes = await client.get({ path: 'products', query: scProdParams });
+      (spRes.body.products || []).forEach(p => {
+        if (!productCollectionMap[p.id]) productCollectionMap[p.id] = [];
+        if (!productCollectionMap[p.id].includes(sc.title)) {
+          productCollectionMap[p.id].push(sc.title);
+        }
+      });
+      if (spRes.pageInfo?.nextPage) {
+        scProdParams = spRes.pageInfo.nextPage.query;
+      } else {
+        scProdHasMore = false;
+      }
+    }
+  }
+
+  const collectionNames = [...new Set(collections.map(c => c.title))].sort();
+  return { collectionNames, productCollectionMap };
+}
+
+// ─── API: Products (paginated response) ──────────────────────────────────────
 
 app.get('/api/products', async (req, res) => {
   try {
     const session = await verifySession(req, res);
     if (!session) return;
 
-    const client = new shopify.clients.Rest({ session });
-    let allProducts = [];
-    let params = { limit: 250, fields: 'id,title,variants,images,product_type,vendor,tags,status' };
-    let hasMore = true;
+    const forceRefresh = req.query.refresh === '1';
 
-    while (hasMore) {
-      const response = await client.get({ path: 'products', query: params });
-      const products = response.body.products || [];
-      allProducts = allProducts.concat(products);
+    // Check cache first
+    let allProducts = !forceRefresh ? getCachedData(session.shop, 'products') : null;
 
-      // Use the SDK's built-in pageInfo for cursor-based pagination
-      if (response.pageInfo?.nextPage) {
-        params = response.pageInfo.nextPage.query;
-      } else {
-        hasMore = false;
-      }
+    if (!allProducts) {
+      const client = new shopify.clients.Rest({ session });
+      allProducts = await fetchAllProducts(client);
+      setCachedData(session.shop, { products: allProducts });
+      log('INFO', `Fetched ${allProducts.length} products from Shopify for ${session.shop}`);
+    } else {
+      log('INFO', `Serving ${allProducts.length} cached products for ${session.shop}`);
     }
 
-    log('INFO', `Fetched ${allProducts.length} products for ${session.shop}`);
+    // Attach collection data if already cached (non-blocking)
+    const collectionData = getCachedData(session.shop, 'collectionNames');
+    const productCollectionMap = getCachedData(session.shop, 'productCollectionMap');
 
-    // Fetch collections and product-collection mappings
-    let collections = [];
-    const productCollectionMap = {}; // productId -> [collectionTitle, ...]
-    try {
-      // Fetch custom collections
-      let customCollections = [];
-      let ccParams = { limit: 250 };
-      let ccHasMore = true;
-      while (ccHasMore) {
-        const ccRes = await client.get({ path: 'custom_collections', query: ccParams });
-        customCollections = customCollections.concat(ccRes.body.custom_collections || []);
-        if (ccRes.pageInfo?.nextPage) {
-          ccParams = ccRes.pageInfo.nextPage.query;
-        } else {
-          ccHasMore = false;
-        }
-      }
-
-      // Fetch smart collections
-      let smartCollections = [];
-      let scParams = { limit: 250 };
-      let scHasMore = true;
-      while (scHasMore) {
-        const scRes = await client.get({ path: 'smart_collections', query: scParams });
-        smartCollections = smartCollections.concat(scRes.body.smart_collections || []);
-        if (scRes.pageInfo?.nextPage) {
-          scParams = scRes.pageInfo.nextPage.query;
-        } else {
-          scHasMore = false;
-        }
-      }
-
-      collections = [...customCollections, ...smartCollections];
-
-      // Fetch collects (product-to-custom-collection mappings)
-      let allCollects = [];
-      let collectParams = { limit: 250 };
-      let collectHasMore = true;
-      while (collectHasMore) {
-        const colRes = await client.get({ path: 'collects', query: collectParams });
-        allCollects = allCollects.concat(colRes.body.collects || []);
-        if (colRes.pageInfo?.nextPage) {
-          collectParams = colRes.pageInfo.nextPage.query;
-        } else {
-          collectHasMore = false;
-        }
-      }
-
-      // Build collection id -> title map
-      const collectionIdToTitle = {};
-      collections.forEach(c => { collectionIdToTitle[c.id] = c.title; });
-
-      // Map products to custom collection titles via collects
-      allCollects.forEach(col => {
-        const title = collectionIdToTitle[col.collection_id];
-        if (title) {
-          if (!productCollectionMap[col.product_id]) productCollectionMap[col.product_id] = [];
-          if (!productCollectionMap[col.product_id].includes(title)) {
-            productCollectionMap[col.product_id].push(title);
-          }
-        }
+    if (collectionData && productCollectionMap) {
+      allProducts.forEach(p => {
+        p.collections = productCollectionMap[p.id] || [];
       });
-
-      // For smart collections, fetch product ids per collection
-      for (const sc of smartCollections) {
-        let scProdParams = { limit: 250, collection_id: sc.id, fields: 'id' };
-        let scProdHasMore = true;
-        while (scProdHasMore) {
-          const spRes = await client.get({ path: 'products', query: scProdParams });
-          const prods = spRes.body.products || [];
-          prods.forEach(p => {
-            if (!productCollectionMap[p.id]) productCollectionMap[p.id] = [];
-            if (!productCollectionMap[p.id].includes(sc.title)) {
-              productCollectionMap[p.id].push(sc.title);
-            }
-          });
-          if (spRes.pageInfo?.nextPage) {
-            scProdParams = spRes.pageInfo.nextPage.query;
-          } else {
-            scProdHasMore = false;
-          }
-        }
-      }
-
-      log('INFO', `Fetched ${collections.length} collections, ${allCollects.length} collects`);
-    } catch (colErr) {
-      log('ERROR', 'Failed to fetch collections (non-fatal)', { error: colErr.message });
     }
 
-    // Attach collection names to products
-    allProducts.forEach(p => {
-      p.collections = productCollectionMap[p.id] || [];
+    res.json({
+      products: allProducts,
+      collections: collectionData || [],
+      collectionsLoaded: !!collectionData,
+      total: allProducts.length,
     });
-
-    const collectionNames = [...new Set(collections.map(c => c.title))].sort();
-    res.json({ products: allProducts, collections: collectionNames });
   } catch (err) {
     log('ERROR', 'Failed to fetch products', { error: err.message });
     res.status(500).json({ error: 'Failed to fetch products' });
+  }
+});
+
+// ─── API: Collections (loaded separately) ────────────────────────────────────
+
+app.get('/api/collections', async (req, res) => {
+  try {
+    const session = await verifySession(req, res);
+    if (!session) return;
+
+    const forceRefresh = req.query.refresh === '1';
+
+    let collectionNames = !forceRefresh ? getCachedData(session.shop, 'collectionNames') : null;
+    let productCollectionMap = !forceRefresh ? getCachedData(session.shop, 'productCollectionMap') : null;
+
+    if (!collectionNames || !productCollectionMap) {
+      const client = new shopify.clients.Rest({ session });
+      const data = await fetchCollectionsData(client);
+      collectionNames = data.collectionNames;
+      productCollectionMap = data.productCollectionMap;
+      setCachedData(session.shop, { collectionNames, productCollectionMap });
+      log('INFO', `Fetched ${collectionNames.length} collections for ${session.shop}`);
+    } else {
+      log('INFO', `Serving cached collections for ${session.shop}`);
+    }
+
+    res.json({ collections: collectionNames, productCollectionMap });
+  } catch (err) {
+    log('ERROR', 'Failed to fetch collections', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch collections' });
   }
 });
 

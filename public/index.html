@@ -321,6 +321,28 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ─── Pagination ─── */
+    .pagination-bar {
+      display: flex; align-items: center; justify-content: center;
+      gap: 6px; padding: 12px 0; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .page-btn {
+      min-width: 34px; height: 34px; padding: 0 8px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg-input); color: var(--text-secondary);
+      font-size: 13px; cursor: pointer; transition: all 0.15s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .page-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+    .page-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .page-info { font-size: 12px; color: var(--text-muted); padding: 0 8px; }
+    .page-size-select {
+      margin-left: 12px; padding: 4px 8px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg-input);
+      color: var(--text-secondary); font-size: 12px; cursor: pointer;
+    }
+
     /* ─── Status Bar ─── */
     .status-bar {
       display: flex; align-items: center; justify-content: space-between;
@@ -400,6 +422,9 @@
             Loading products...
           </div>
         </div>
+
+        <!-- Pagination -->
+        <div class="pagination-bar" id="paginationBar" style="display:none;"></div>
       </div>
 
       <!-- ═══ Settings Tab ═══ -->
@@ -559,11 +584,14 @@
     shop: null,
     products: [],           // All products from Shopify
     collections: [],        // Collection names from Shopify
+    collectionsLoaded: false,
     filteredProducts: [],   // After search/filter
     queue: [],              // Print queue: [{ id, variantId, name, barcode, price, image, qty }]
     settings: null,
     sortField: 'name',
     sortDir: 'asc',
+    currentPage: 1,
+    pageSize: 50,
   };
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -640,16 +668,18 @@
 
   // ─── Products ──────────────────────────────────────────────────────────────
 
-  async function loadProducts() {
+  async function loadProducts(forceRefresh = false) {
     try {
       showLoading('Loading products from Shopify...');
-      const res = await apiCall('/api/products');
+      const endpoint = forceRefresh ? '/api/products?refresh=1' : '/api/products';
+      const res = await apiCall(endpoint);
       const data = await res.json();
       state.products = data.products || [];
       state.collections = data.collections || [];
+      state.collectionsLoaded = data.collectionsLoaded || false;
 
-      // Build filter options
       buildFilterOptions();
+      state.currentPage = 1;
       applyFilters();
       setStatus(`${state.products.length} products loaded`);
       toast(`Loaded ${state.products.length} products`, 'success');
@@ -658,6 +688,34 @@
       setStatus('Error loading products');
     } finally {
       hideLoading();
+    }
+
+    // Load collections in the background if not already loaded
+    if (!state.collectionsLoaded) {
+      loadCollections();
+    }
+  }
+
+  async function loadCollections(forceRefresh = false) {
+    try {
+      const endpoint = forceRefresh ? '/api/collections?refresh=1' : '/api/collections';
+      const res = await apiCall(endpoint);
+      const data = await res.json();
+      state.collections = data.collections || [];
+      state.collectionsLoaded = true;
+
+      // Apply collection data to products
+      const map = data.productCollectionMap || {};
+      state.products.forEach(p => {
+        p.collections = map[p.id] || [];
+      });
+
+      buildFilterOptions();
+      applyFilters();
+      setStatus(`${state.products.length} products, ${state.collections.length} collections loaded`);
+    } catch (err) {
+      // Non-fatal: collections are a nice-to-have for filtering
+      console.warn('Failed to load collections:', err.message);
     }
   }
 
@@ -683,6 +741,9 @@
   function applyFilters() {
     const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
     const filterCollection = document.getElementById('filterCollection').value;
+
+    // Reset to page 1 when filters change
+    state.currentPage = 1;
 
     let filtered = state.products.filter(p => {
       // Only include active products
@@ -728,21 +789,29 @@
 
     state.filteredProducts = filtered;
     renderProductGrid();
-    document.getElementById('statusRight').textContent = `Showing ${filtered.length} of ${state.products.length}`;
   }
 
   function renderProductGrid() {
     const grid = document.getElementById('productGrid');
-    const products = state.filteredProducts;
+    const allFiltered = state.filteredProducts;
 
-    if (products.length === 0) {
+    if (allFiltered.length === 0) {
       grid.innerHTML = `
         <div style="grid-column:1/-1; text-align:center; padding:60px 20px; color:var(--text-muted);">
           <div style="font-size:40px; margin-bottom:10px;">🔍</div>
           No products match your search
         </div>`;
+      renderPagination(0, 0);
       return;
     }
+
+    // Pagination math
+    const totalPages = Math.ceil(allFiltered.length / state.pageSize);
+    if (state.currentPage > totalPages) state.currentPage = totalPages;
+    if (state.currentPage < 1) state.currentPage = 1;
+    const startIdx = (state.currentPage - 1) * state.pageSize;
+    const endIdx = Math.min(startIdx + state.pageSize, allFiltered.length);
+    const products = allFiltered.slice(startIdx, endIdx);
 
     grid.innerHTML = products.map(product => {
       const variant = product.variants?.[0];
@@ -801,6 +870,81 @@
         renderProductGrid();
       });
     });
+
+    renderPagination(allFiltered.length, totalPages);
+    document.getElementById('statusRight').textContent =
+      `${startIdx + 1}–${endIdx} of ${allFiltered.length} (${state.products.length} total)`;
+  }
+
+  function renderPagination(totalItems, totalPages) {
+    const bar = document.getElementById('paginationBar');
+    if (totalPages <= 1) {
+      bar.style.display = 'none';
+      return;
+    }
+    bar.style.display = 'flex';
+
+    const page = state.currentPage;
+    let html = '';
+
+    // Prev button
+    html += `<button class="page-btn" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>◀</button>`;
+
+    // Page buttons with ellipsis
+    const maxButtons = 7;
+    let startPage = Math.max(1, page - Math.floor(maxButtons / 2));
+    let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+    if (endPage - startPage < maxButtons - 1) {
+      startPage = Math.max(1, endPage - maxButtons + 1);
+    }
+
+    if (startPage > 1) {
+      html += `<button class="page-btn" data-page="1">1</button>`;
+      if (startPage > 2) html += `<span class="page-info">…</span>`;
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+      html += `<button class="page-btn${i === page ? ' active' : ''}" data-page="${i}">${i}</button>`;
+    }
+
+    if (endPage < totalPages) {
+      if (endPage < totalPages - 1) html += `<span class="page-info">…</span>`;
+      html += `<button class="page-btn" data-page="${totalPages}">${totalPages}</button>`;
+    }
+
+    // Next button
+    html += `<button class="page-btn" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>▶</button>`;
+
+    // Page size selector
+    html += `<select class="page-size-select" id="pageSizeSelect">
+      <option value="25" ${state.pageSize === 25 ? 'selected' : ''}>25 / page</option>
+      <option value="50" ${state.pageSize === 50 ? 'selected' : ''}>50 / page</option>
+      <option value="100" ${state.pageSize === 100 ? 'selected' : ''}>100 / page</option>
+      <option value="200" ${state.pageSize === 200 ? 'selected' : ''}>200 / page</option>
+    </select>`;
+
+    bar.innerHTML = html;
+
+    // Attach pagination handlers
+    bar.querySelectorAll('.page-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = parseInt(btn.dataset.page);
+        if (p >= 1 && p <= totalPages) {
+          state.currentPage = p;
+          renderProductGrid();
+          document.getElementById('productGrid').scrollTo(0, 0);
+        }
+      });
+    });
+
+    const pageSizeSelect = document.getElementById('pageSizeSelect');
+    if (pageSizeSelect) {
+      pageSizeSelect.addEventListener('change', (e) => {
+        state.pageSize = parseInt(e.target.value);
+        state.currentPage = 1;
+        renderProductGrid();
+      });
+    }
   }
 
   // ─── Search / Filter Event Listeners ────────────────────────────────────
@@ -828,7 +972,7 @@
     });
   });
 
-  document.getElementById('refreshProducts').addEventListener('click', loadProducts);
+  document.getElementById('refreshProducts').addEventListener('click', () => loadProducts(true));
 
   // ─── Print Queue ───────────────────────────────────────────────────────────
 
